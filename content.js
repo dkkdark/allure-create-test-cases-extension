@@ -220,10 +220,6 @@
                 </div>
                 <div class="ctc-actions">
                     <button id="create-test-button" class="ctc-btn primary ctc-btn-lg">Generate Test Case</button>
-                    <div class="ctc-actions-right">
-                        <button id="load-tests-btn" class="ctc-btn secondary ctc-btn-sm" title="Load Allure Test Cases">📥 Load</button>
-                        <button id="save-tests-btn" class="ctc-btn success ctc-btn-sm" title="Save Allure Test Cases">💾 Save</button>
-                    </div>
                 </div>
                 <div id="create-test-status"></div>
             </div>
@@ -281,60 +277,37 @@
             }
         });        
 
-        document.getElementById('load-tests-btn').addEventListener('click', async () => {
-            const statusDiv = document.getElementById('create-test-status');
-            const loadBtn = document.getElementById('load-tests-btn');
-            const timeoutMs = 900000;
-            statusDiv.textContent = 'Loading Allure test cases...';
-            loadBtn.disabled = true;
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-                const response = await fetch(`${API_BASE_URL}/load_test_cases_from_allure`, { method: 'POST', signal: controller.signal });
-                clearTimeout(timeoutId);
-                const data = await response.json();
-                const result = data.result?.result || data.result;
-                testCasesList = Array.isArray(result) ? result : [result];
-                currentIndex = 0;
-                globalFieldValues = {};
-                statusDiv.textContent = `Loaded ${testCasesList.length} test case(s)`;
-                renderCurrentTestCase();
-            } catch (err) {
-                if (err && err.name === 'AbortError') {
-                    statusDiv.textContent = `Error: Request timed out after ${Math.floor(timeoutMs / 60000)} minutes`;
-                } else {
-                    statusDiv.textContent = `Error: ${err?.message || err}`;
-                }
-            } finally {
-                loadBtn.disabled = false;
-            }
-        });
-
-        document.getElementById('save-tests-btn').addEventListener('click', async () => {
-            const statusDiv = document.getElementById('create-test-status');
-            statusDiv.textContent = 'Saving Allure test cases...';
-            try {
-                const response = await fetch(`${API_BASE_URL}/save_allure_test_cases`, { method: 'POST' });
-                const data = await response.json();
-                statusDiv.textContent = `Saved: ${JSON.stringify(data.result)}`;
-            } catch (err) {
-                statusDiv.textContent = `Error: ${err}`;
-            }
-        });
     }
 
-    function saveCurrentFields() {
-        const container = document.getElementById('fields-container');
-        if (!container) return;
+    function saveCurrentTestCase() {
+        const nameEl = document.getElementById('tc-name');
+        const preconditionEl = document.getElementById('tc-precondition');
+        const stepsEl = document.getElementById('tc-steps');
+        const expectedEl = document.getElementById('tc-expected');
+        const fieldsContainer = document.getElementById('fields-container');
 
-        const inputs = container.querySelectorAll('input');
-        inputs.forEach((inp, idx) => {
-            const label = container.querySelector(`label[for="field-${idx}"]`);
-            if (label) {
-                const fieldName = label.textContent.replace(':', '').trim();
-                globalFieldValues[fieldName] = inp.value;
-            }
-        });
+        if (!nameEl || !testCasesList[currentIndex]) return;
+
+        const tc = testCasesList[currentIndex];
+        tc.name = nameEl.value;
+        tc.Name = nameEl.value;
+        tc.precondition = preconditionEl.value;
+        tc.Precondition = preconditionEl.value;
+        tc.steps = stepsEl.value.split('\n').filter(x => x.trim());
+        tc.Step = tc.steps;
+        tc.expected_result = expectedEl.value;
+        tc["Expected result"] = expectedEl.value;
+
+        if (fieldsContainer) {
+            const inputs = fieldsContainer.querySelectorAll('input');
+            inputs.forEach((inp, idx) => {
+                const label = fieldsContainer.querySelector(`label[for="field-${idx}"]`);
+                if (label) {
+                    const fieldName = label.textContent.replace(':', '').trim();
+                    globalFieldValues[fieldName] = inp.value;
+                }
+            });
+        }
     }
 
     function renderCurrentTestCase() {
@@ -400,13 +373,13 @@
         });
     
         document.getElementById('prev-btn').addEventListener('click', () => {
-            saveCurrentFields();
+            saveCurrentTestCase();
             if (currentIndex > 0) currentIndex--;
             renderCurrentTestCase();
         });
     
         document.getElementById('next-btn').addEventListener('click', () => {
-            saveCurrentFields();
+            saveCurrentTestCase();
             if (currentIndex < testCasesList.length - 1) currentIndex++;
             renderCurrentTestCase();
         });
