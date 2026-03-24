@@ -1,203 +1,428 @@
 (function () {
     const API_BASE_URL = window.ALLURE_EXTENSION_CONFIG?.API_BASE_URL;
 
+    const GROUP_CONFIG = {
+        most_important: {
+            title: 'Самые важные',
+            subtitle: 'Минимальный критичный набор, который стоит покрыть в первую очередь.',
+            accent: 'critical',
+        },
+        less_important: {
+            title: 'Менее важные',
+            subtitle: 'Полезные сценарии второго приоритета без перегруза покрытия.',
+            accent: 'secondary',
+        },
+        possibly_affected_existing: {
+            title: 'Возможно затронутые',
+            subtitle: 'Существующие кейсы, которые стоит проверить или обновить.',
+            accent: 'impact',
+        },
+    };
+
+    let groupedCases = {
+        most_important: [],
+        less_important: [],
+        possibly_affected_existing: [],
+    };
+    let selectedKey = null;
+
     function ensureStylesInjected() {
         if (document.getElementById('create-test-styles')) return;
         const style = document.createElement('style');
         style.id = 'create-test-styles';
         style.textContent = `
-            /* ===== Light theme (default) ===== */
             #create-test-container {
-                --ctc-bg: #ffffff;
-                --ctc-border: #e5e7eb;
-                --ctc-shadow: rgba(0,0,0,0.06);
-                --ctc-text: #0f172a;
-                --ctc-text-secondary: #334155;
-                --ctc-text-muted: #475569;
-                --ctc-input-bg: #f8fafc;
-                --ctc-input-bg-focus: #ffffff;
-                --ctc-input-border: #d1d5db;
-                --ctc-input-text: #0f172a;
-                --ctc-placeholder: #94a3b8;
-                --ctc-card-bg: linear-gradient(180deg, #ffffff, #fbfdff);
-                --ctc-card-border: #e5e7eb;
-                --ctc-card-shadow: rgba(0,0,0,0.06);
-                --ctc-focus-ring: rgba(59, 130, 246, 0.15);
-                --ctc-focus-border: #60a5fa;
-                --ctc-btn-secondary-bg: #f1f5f9;
-                --ctc-btn-secondary-text: #0f172a;
-                --ctc-btn-secondary-border: #e2e8f0;
-                --ctc-btn-secondary-hover: #e2e8f0;
-                --ctc-btn-secondary-shadow: rgba(15,23,42,0.06);
-                --ctc-toggle-bg: #f1f5f9;
-                --ctc-toggle-hover: #e2e8f0;
-                --ctc-toggle-border: #e2e8f0;
-            }
-
-            /* ===== Dark theme ===== */
-            #create-test-container.ctc-dark {
-                --ctc-bg: #1a1b2e;
-                --ctc-border: #2d2e45;
-                --ctc-shadow: rgba(0,0,0,0.35);
-                --ctc-text: #e2e4f0;
-                --ctc-text-secondary: #a0a4be;
-                --ctc-text-muted: #8a8ea8;
-                --ctc-input-bg: #22233a;
-                --ctc-input-bg-focus: #282940;
-                --ctc-input-border: #3a3b55;
-                --ctc-input-text: #e2e4f0;
-                --ctc-placeholder: #5c5f7a;
-                --ctc-card-bg: linear-gradient(180deg, #202136, #1c1d30);
-                --ctc-card-border: #2d2e45;
-                --ctc-card-shadow: rgba(0,0,0,0.25);
-                --ctc-focus-ring: rgba(91, 141, 239, 0.18);
-                --ctc-focus-border: #5b8def;
-                --ctc-btn-secondary-bg: #2d2e45;
-                --ctc-btn-secondary-text: #c5c8e0;
-                --ctc-btn-secondary-border: #3a3b55;
-                --ctc-btn-secondary-hover: #3a3b55;
-                --ctc-btn-secondary-shadow: rgba(0,0,0,0.2);
-                --ctc-toggle-bg: #2d2e45;
-                --ctc-toggle-hover: #3a3b55;
-                --ctc-toggle-border: #3a3b55;
-            }
-
-            #create-test-container { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                --ctc-bg: linear-gradient(180deg, #f4f8ff 0%, #eaf2ff 100%);
+                --ctc-panel: rgba(255, 255, 255, 0.96);
+                --ctc-border: rgba(86, 132, 214, 0.18);
+                --ctc-shadow: rgba(58, 105, 191, 0.14);
+                --ctc-text: #12304f;
+                --ctc-text-soft: #4c6a8f;
+                --ctc-text-muted: #7f98b8;
+                --ctc-input-bg: rgba(248, 251, 255, 0.98);
+                --ctc-input-border: rgba(117, 156, 224, 0.24);
+                --ctc-focus: rgba(55, 125, 255, 0.16);
+                --ctc-primary: #2f80ed;
+                --ctc-primary-hover: #226fd7;
+                --ctc-secondary: #edf4ff;
+                --ctc-secondary-hover: #dfebff;
+                --ctc-critical: #2274e5;
+                --ctc-less: #4f8df0;
+                --ctc-impact: #1d5db8;
+                font-family: "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+                color: var(--ctc-text);
                 background: var(--ctc-bg);
                 border: 1px solid var(--ctc-border);
-                border-radius: 14px;
-                padding: 16px;
-                margin-bottom: 14px;
-                box-shadow: 0 6px 24px var(--ctc-shadow);
-                transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+                border-radius: 24px;
+                padding: 18px;
+                margin-bottom: 16px;
+                box-shadow: 0 18px 40px var(--ctc-shadow);
+            }
+            #create-test-container.ctc-dark {
+                --ctc-bg: linear-gradient(180deg, #101a2b 0%, #0d1522 100%);
+                --ctc-panel: rgba(17, 29, 47, 0.94);
+                --ctc-border: rgba(102, 145, 213, 0.16);
+                --ctc-shadow: rgba(0, 0, 0, 0.35);
+                --ctc-text: #eaf3ff;
+                --ctc-text-soft: #a8c0df;
+                --ctc-text-muted: #7890b1;
+                --ctc-input-bg: rgba(15, 25, 40, 0.98);
+                --ctc-input-border: rgba(102, 145, 213, 0.15);
+                --ctc-focus: rgba(47, 128, 237, 0.2);
+                --ctc-primary: #4c9cff;
+                --ctc-primary-hover: #318cff;
+                --ctc-secondary: rgba(52, 82, 128, 0.34);
+                --ctc-secondary-hover: rgba(61, 96, 150, 0.48);
+                --ctc-critical: #66abff;
+                --ctc-less: #89bcff;
+                --ctc-impact: #4f94ff;
+            }
+            #create-test-container * { box-sizing: border-box; }
+            #create-test-container .ctc-shell {
+                display: grid;
+                gap: 16px;
+            }
+            #create-test-container .ctc-hero,
+            #create-test-container .ctc-results,
+            #create-test-container .ctc-editor {
+                background: var(--ctc-panel);
+                border: 1px solid var(--ctc-border);
+                border-radius: 20px;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+            }
+            #create-test-container .ctc-hero {
+                padding: 18px;
+                position: relative;
+                overflow: hidden;
+            }
+            #create-test-container .ctc-hero::after {
+                content: '';
+                position: absolute;
+                right: -60px;
+                top: -50px;
+                width: 180px;
+                height: 180px;
+                background: radial-gradient(circle, rgba(47,128,237,0.18), transparent 70%);
+                pointer-events: none;
             }
             #create-test-container .ctc-header {
                 display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 14px;
+            }
+            #create-test-container .ctc-kicker {
+                text-transform: uppercase;
+                letter-spacing: 0.12em;
+                font-size: 11px;
+                color: var(--ctc-text-muted);
+                margin-bottom: 6px;
+            }
+            #create-test-container h3 {
+                margin: 0;
+                font-size: 25px;
+                line-height: 1.1;
+                color: var(--ctc-text);
+            }
+            #create-test-container .ctc-subtitle {
+                margin: 8px 0 0;
+                max-width: 780px;
+                color: var(--ctc-text-soft);
+                font-size: 14px;
+                line-height: 1.5;
+            }
+            #create-test-container .ctc-theme-toggle {
+                border: 1px solid var(--ctc-border);
+                background: var(--ctc-secondary);
+                color: var(--ctc-text);
+                border-radius: 999px;
+                padding: 8px 12px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 700;
+            }
+            #create-test-container .ctc-query {
+                width: 100%;
+                min-height: 128px;
+                padding: 14px 16px;
+                border-radius: 16px;
+                border: 1px solid var(--ctc-input-border);
+                background: var(--ctc-input-bg);
+                color: var(--ctc-text);
+                resize: vertical;
+                outline: none;
+                font: inherit;
+                line-height: 1.5;
+            }
+            #create-test-container .ctc-source-grid {
+                display: grid;
+                gap: 12px;
+            }
+            #create-test-container .ctc-input-wrap {
+                display: grid;
+                gap: 6px;
+            }
+            #create-test-container .ctc-query:focus,
+            #create-test-container .ctc-input:focus {
+                border-color: var(--ctc-primary);
+                box-shadow: 0 0 0 4px var(--ctc-focus);
+            }
+            #create-test-container .ctc-actions {
+                margin-top: 12px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            #create-test-container .ctc-btn {
+                border: 1px solid transparent;
+                border-radius: 999px;
+                padding: 10px 16px;
+                cursor: pointer;
+                font: inherit;
+                font-size: 13px;
+                font-weight: 700;
+                transition: background 120ms ease, transform 80ms ease, border-color 120ms ease;
+            }
+            #create-test-container .ctc-btn:active { transform: translateY(1px); }
+            #create-test-container .ctc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+            #create-test-container .ctc-btn-primary {
+                background: var(--ctc-primary);
+                color: #fff7f0;
+            }
+            #create-test-container .ctc-btn-primary:hover:not(:disabled) {
+                background: var(--ctc-primary-hover);
+            }
+            #create-test-container .ctc-btn-secondary {
+                background: var(--ctc-secondary);
+                color: var(--ctc-text);
+                border-color: var(--ctc-border);
+            }
+            #create-test-container .ctc-btn-secondary:hover:not(:disabled) {
+                background: var(--ctc-secondary-hover);
+            }
+            #create-test-container .ctc-status {
+                color: var(--ctc-text-soft);
+                font-size: 13px;
+                min-height: 18px;
+            }
+            #create-test-container .ctc-results {
+                padding: 16px;
+            }
+            #create-test-container .ctc-summary-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                gap: 10px;
+                margin-bottom: 16px;
+            }
+            #create-test-container .ctc-summary-card {
+                border-radius: 16px;
+                padding: 14px;
+                border: 1px solid var(--ctc-border);
+                background: rgba(255,255,255,0.45);
+            }
+            #create-test-container.ctc-dark .ctc-summary-card {
+                background: rgba(255,255,255,0.03);
+            }
+            #create-test-container .ctc-summary-label {
+                font-size: 12px;
+                color: var(--ctc-text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+            }
+            #create-test-container .ctc-summary-count {
+                margin-top: 8px;
+                font-size: 30px;
+                font-weight: 700;
+                line-height: 1;
+            }
+            #create-test-container .ctc-summary-card.critical .ctc-summary-count { color: var(--ctc-critical); }
+            #create-test-container .ctc-summary-card.secondary .ctc-summary-count { color: var(--ctc-less); }
+            #create-test-container .ctc-summary-card.impact .ctc-summary-count { color: var(--ctc-impact); }
+            #create-test-container .ctc-group + .ctc-group {
+                margin-top: 18px;
+                padding-top: 18px;
+                border-top: 1px solid var(--ctc-border);
+            }
+            #create-test-container .ctc-group-title {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+            #create-test-container .ctc-group-title h4 {
+                margin: 0;
+                font-size: 18px;
+                color: var(--ctc-text);
+            }
+            #create-test-container .ctc-group-subtitle {
+                margin: 0 0 12px;
+                color: var(--ctc-text-soft);
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            #create-test-container .ctc-cards {
+                display: grid;
+                gap: 10px;
+            }
+            #create-test-container .ctc-item {
+                border: 1px solid var(--ctc-border);
+                border-radius: 16px;
+                background: rgba(255,255,255,0.5);
+                padding: 14px;
+                cursor: pointer;
+                transition: transform 100ms ease, border-color 120ms ease, background 120ms ease;
+            }
+            #create-test-container.ctc-dark .ctc-item {
+                background: rgba(255,255,255,0.03);
+            }
+            #create-test-container .ctc-item:hover {
+                transform: translateY(-1px);
+                border-color: rgba(47, 128, 237, 0.38);
+            }
+            #create-test-container .ctc-item.ctc-item-selected {
+                border-color: var(--ctc-primary);
+                box-shadow: 0 0 0 3px var(--ctc-focus);
+                background: rgba(47, 128, 237, 0.06);
+            }
+            #create-test-container .ctc-item-top {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+            #create-test-container .ctc-item-name {
+                font-size: 16px;
+                font-weight: 700;
+                color: var(--ctc-text);
+            }
+            #create-test-container .ctc-pill {
+                display: inline-flex;
+                align-items: center;
+                border-radius: 999px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+            #create-test-container .ctc-pill-create {
+                background: rgba(47, 128, 237, 0.12);
+                color: #226fd7;
+            }
+            #create-test-container .ctc-pill-update {
+                background: rgba(29, 93, 184, 0.12);
+                color: #1d5db8;
+            }
+            #create-test-container.ctc-dark .ctc-pill-create {
+                background: rgba(76, 156, 255, 0.18);
+                color: #c6e0ff;
+            }
+            #create-test-container.ctc-dark .ctc-pill-update {
+                background: rgba(54, 115, 214, 0.2);
+                color: #a8ceff;
+            }
+            #create-test-container .ctc-item-summary {
+                color: var(--ctc-text-soft);
+                font-size: 13px;
+                line-height: 1.45;
+            }
+            #create-test-container .ctc-item-meta {
+                margin-top: 10px;
+                color: var(--ctc-text-muted);
+                font-size: 12px;
+            }
+            #create-test-container .ctc-empty {
+                color: var(--ctc-text-muted);
+                font-size: 13px;
+                padding: 12px 0;
+            }
+            #create-test-container .ctc-editor {
+                padding: 16px;
+            }
+            #create-test-container .ctc-editor-header {
+                display: flex;
+                gap: 10px;
                 align-items: center;
                 justify-content: space-between;
                 margin-bottom: 12px;
             }
-            #create-test-container h3 {
+            #create-test-container .ctc-editor-title {
                 margin: 0;
-                font-size: 16px;
-                font-weight: 600;
+                font-size: 19px;
                 color: var(--ctc-text);
             }
-            #create-test-container .ctc-theme-toggle {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 32px;
-                height: 32px;
-                border-radius: 8px;
-                border: 1px solid var(--ctc-toggle-border);
-                background: var(--ctc-toggle-bg);
-                cursor: pointer;
-                font-size: 16px;
-                line-height: 1;
-                transition: background 150ms ease, border-color 150ms ease;
-            }
-            #create-test-container .ctc-theme-toggle:hover {
-                background: var(--ctc-toggle-hover);
-            }
-            #create-test-container .ctc-row { margin-top: 12px; }
-            #create-test-container label { color: var(--ctc-text-secondary); font-weight: 600; font-size: 13px; }
-            #create-test-container .ctc-textarea {
-                width: 100%;
-                min-height: 90px;
-                padding: 10px 12px;
-                border: 1px solid var(--ctc-input-border);
-                border-radius: 10px;
-                background: var(--ctc-input-bg);
-                color: var(--ctc-input-text);
-                resize: vertical;
-                outline: none;
-                transition: box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
-            }
-            #create-test-container .ctc-textarea:focus {
-                border-color: var(--ctc-focus-border);
-                background: var(--ctc-input-bg-focus);
-                box-shadow: 0 0 0 4px var(--ctc-focus-ring);
-            }
-            #create-test-container .ctc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
-            #create-test-container .ctc-actions-right { margin-left: auto; display: flex; gap: 6px; }
-            #create-test-container .ctc-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                padding: 8px 12px;
-                border-radius: 10px;
-                border: 1px solid transparent;
-                font-weight: 600;
+            #create-test-container .ctc-editor-hint {
+                margin: 6px 0 0;
+                color: var(--ctc-text-soft);
                 font-size: 13px;
-                cursor: pointer;
-                transition: transform 60ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
-                user-select: none;
             }
-            #create-test-container .ctc-btn:active { transform: translateY(1px); }
-            #create-test-container .ctc-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
-
-            /* Button variants */
-            #create-test-container .ctc-btn-lg { padding: 10px 20px; font-size: 14px; }
-            #create-test-container .primary { background: #2563eb; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
-            #create-test-container .primary:hover:not(:disabled) { background: #1d4ed8; }
-            #create-test-container .secondary { background: var(--ctc-btn-secondary-bg); color: var(--ctc-btn-secondary-text); border-color: var(--ctc-btn-secondary-border); box-shadow: 0 2px 8px var(--ctc-btn-secondary-shadow); }
-            #create-test-container .secondary:hover:not(:disabled) { background: var(--ctc-btn-secondary-hover); }
-            #create-test-container .success { background: #16a34a; color: #fff; box-shadow: 0 2px 8px rgba(22,163,74,0.28); }
-            #create-test-container .success:hover:not(:disabled) { background: #15803d; }
-            #create-test-container .danger { background: #ef4444; color: #fff; box-shadow: 0 2px 8px rgba(239,68,68,0.28); }
-            #create-test-container .danger:hover:not(:disabled) { background: #dc2626; }
-
-            #create-test-container .ctc-btn-sm { padding: 6px 10px; font-size: 12px; }
-
-            #create-test-status { margin-top: 8px; font-size: 12px; color: var(--ctc-text-muted); }
-
-            /* Cards / sections */
-            .ctc-card {
-                background: var(--ctc-card-bg);
-                border: 1px solid var(--ctc-card-border);
-                border-radius: 12px;
-                padding: 12px;
-                box-shadow: 0 1px 4px var(--ctc-card-shadow);
-                transition: background 200ms ease, border-color 200ms ease;
+            #create-test-container .ctc-form-grid {
+                display: grid;
+                gap: 12px;
             }
-            .ctc-card + .ctc-card { margin-top: 12px; }
-
-            /* Viewer */
-            #test-case-viewer { margin-top: 12px; }
-            .ctc-view h4 { margin: 0 0 12px 0; color: var(--ctc-text); font-weight: 700; font-size: 15px; }
-            .ctc-field-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-            .ctc-field-row label { width: 160px; font-weight: 600; color: var(--ctc-text-secondary); }
-            .ctc-input { flex: 1; padding: 8px 10px; border: 1px solid var(--ctc-input-border); border-radius: 8px; background: var(--ctc-input-bg); color: var(--ctc-input-text) !important; transition: background 200ms ease, border-color 200ms ease; }
-            .ctc-input:focus { outline: none; border-color: var(--ctc-focus-border); box-shadow: 0 0 0 4px var(--ctc-focus-ring); }
-
-            #create-test-container input,
-            #create-test-container textarea {
-                color: var(--ctc-input-text) !important;
+            #create-test-container .ctc-label {
+                display: block;
+                margin-bottom: 6px;
+                color: var(--ctc-text-soft);
+                font-size: 12px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
             }
-            #create-test-container input::placeholder,
-            #create-test-container textarea::placeholder {
-                color: var(--ctc-placeholder);
+            #create-test-container .ctc-input {
+                width: 100%;
+                min-height: 46px;
+                padding: 12px 14px;
+                border-radius: 14px;
+                border: 1px solid var(--ctc-input-border);
+                background: var(--ctc-input-bg);
+                color: var(--ctc-text);
+                outline: none;
+                font: inherit;
+                resize: vertical;
             }
-
-            .ctc-nav { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+            #create-test-container .ctc-fields {
+                display: grid;
+                gap: 8px;
+            }
+            #create-test-container .ctc-field-row {
+                display: grid;
+                grid-template-columns: 170px minmax(0, 1fr);
+                gap: 10px;
+                align-items: center;
+            }
+            #create-test-container .ctc-field-name {
+                color: var(--ctc-text-soft);
+                font-size: 13px;
+                font-weight: 700;
+            }
+            @media (max-width: 900px) {
+                #create-test-container .ctc-field-row {
+                    grid-template-columns: 1fr;
+                }
+                #create-test-container .ctc-header,
+                #create-test-container .ctc-editor-header,
+                #create-test-container .ctc-group-title {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+            }
         `;
         document.head.appendChild(style);
     }
 
-    const waitForContainer = setInterval(() => {
-        const target = document.querySelector('._3Cy1IG_tree');
-        if (target) {
-            clearInterval(waitForContainer);
+    function waitForMount() {
+        const timer = setInterval(() => {
+            const target = document.querySelector('._3Cy1IG_tree');
+            if (!target) return;
+            clearInterval(timer);
             injectUI(target);
-        }
-    }, 500);
-
-    let testCasesList = [];
-    let currentIndex = 0;
-    let editableFields = {};
-    let globalFieldValues = {};
+        }, 500);
+    }
 
     function injectUI(target) {
         if (document.getElementById('create-test-container')) return;
@@ -205,234 +430,456 @@
 
         const container = document.createElement('div');
         container.id = 'create-test-container';
-        const isDark = localStorage.getItem('ctc-theme') === 'dark';
-        if (isDark) container.classList.add('ctc-dark');
+        if (localStorage.getItem('ctc-theme-v2') === 'dark') {
+            container.classList.add('ctc-dark');
+        }
 
         container.innerHTML = `
-            <div class="ctc-header">
-                <h3>🧩 Test Case Creation Tool</h3>
-                <button id="ctc-theme-btn" class="ctc-theme-toggle" title="Toggle theme">${isDark ? '☀️' : '🌙'}</button>
+            <div class="ctc-shell">
+                <section class="ctc-hero">
+                    <div class="ctc-header">
+                        <div>
+                            <div class="ctc-kicker">Test Design Studio</div>
+                            <h3>Генератор тест-кейсов</h3>
+                            <p class="ctc-subtitle">После запроса ты сразу увидишь три группы: самые важные кейсы, менее важные и существующие тесты, которые, возможно, попадают под изменения. Можно использовать описание, ссылку на доку или оба источника вместе.</p>
+                        </div>
+                        <button id="ctc-theme-btn" class="ctc-theme-toggle" type="button">Тема</button>
+                    </div>
+                    <div class="ctc-source-grid">
+                        <div class="ctc-input-wrap">
+                            <label class="ctc-label" for="ctc-query">Описание задачи</label>
+                            <textarea id="ctc-query" class="ctc-query" placeholder="Вставь описание новой фичи, изменений в доке или сценария, который нужно покрыть"></textarea>
+                        </div>
+                        <div class="ctc-input-wrap">
+                            <label class="ctc-label" for="ctc-doc-url">Ссылка на доку</label>
+                            <input id="ctc-doc-url" class="ctc-input" type="url" placeholder="https://your-company.atlassian.net/wiki/..." />
+                        </div>
+                    </div>
+                    <div class="ctc-actions">
+                        <button id="ctc-generate-btn" class="ctc-btn ctc-btn-primary" type="button">Собрать предложения</button>
+                        <button id="ctc-clear-btn" class="ctc-btn ctc-btn-secondary" type="button">Очистить</button>
+                        <div id="ctc-status" class="ctc-status"></div>
+                    </div>
+                </section>
+                <section id="ctc-results" class="ctc-results"></section>
+                <section id="ctc-editor" class="ctc-editor"></section>
             </div>
-            <div class="ctc-card">
-                <div class="ctc-row">
-                    <label for="create-test-input">Paste documentation:</label>
-                    <textarea id="create-test-input" class="ctc-textarea" placeholder="Paste documentation or test details here"></textarea>
-                </div>
-                <div class="ctc-actions">
-                    <button id="create-test-button" class="ctc-btn primary ctc-btn-lg">Generate Test Case</button>
-                </div>
-                <div id="create-test-status"></div>
-            </div>
-            <div id="test-case-viewer"></div>
         `;
 
         target.prepend(container);
 
         document.getElementById('ctc-theme-btn').addEventListener('click', () => {
             container.classList.toggle('ctc-dark');
-            const nowDark = container.classList.contains('ctc-dark');
-            localStorage.setItem('ctc-theme', nowDark ? 'dark' : 'light');
-            document.getElementById('ctc-theme-btn').textContent = nowDark ? '☀️' : '🌙';
+            localStorage.setItem('ctc-theme-v2', container.classList.contains('ctc-dark') ? 'dark' : 'light');
         });
 
-        document.getElementById('create-test-button').addEventListener('click', async () => {
-            const input = document.getElementById('create-test-input').value;
-            const statusDiv = document.getElementById('create-test-status');
-            statusDiv.textContent = 'Generating test case...';
-        
-            try {
-                const response = await fetch(`${API_BASE_URL}/get_test_case`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: input })
-                });
-        
-                let data = await response.json();
-                console.log("Raw response:", data);
-        
-                let result = data.result;
-                if (typeof result === 'string') {
-                    try {
-                        result = JSON.parse(result);
-                    } catch {
-                        const match = result.match(/(\[.*\]|\{.*\})/s);
-                        if (match) result = JSON.parse(match[1]);
-                    }
-                }
-        
-                testCasesList = Array.isArray(result) ? result : [result];
-                currentIndex = 0;
-                globalFieldValues = {};
-        
-                if (!testCasesList.length || !testCasesList[0]) {
-                    statusDiv.textContent = '⚠️ No test case data returned.';
-                    return;
-                }
-        
-                statusDiv.textContent = `✅ Generated ${testCasesList.length} test case(s)`;
-                renderCurrentTestCase();
-            } catch (err) {
-                console.error(err);
-                statusDiv.textContent = `❌ Error: ${err}`;
-            }
-        });        
+        document.getElementById('ctc-clear-btn').addEventListener('click', () => {
+            groupedCases = emptyGroupedCases();
+            selectedKey = null;
+            document.getElementById('ctc-query').value = '';
+            document.getElementById('ctc-doc-url').value = '';
+            setStatus('');
+            renderResults();
+            renderEditor();
+        });
 
+        document.getElementById('ctc-generate-btn').addEventListener('click', handleGenerate);
+
+        renderResults();
+        renderEditor();
     }
 
-    function saveCurrentTestCase() {
-        const nameEl = document.getElementById('tc-name');
-        const preconditionEl = document.getElementById('tc-precondition');
-        const stepsEl = document.getElementById('tc-steps');
-        const expectedEl = document.getElementById('tc-expected');
-        const fieldsContainer = document.getElementById('fields-container');
+    async function handleGenerate() {
+        const query = document.getElementById('ctc-query').value.trim();
+        const docUrl = document.getElementById('ctc-doc-url').value.trim();
+        if (!query && !docUrl) {
+            setStatus('Нужно добавить описание, ссылку на доку или оба источника сразу.');
+            return;
+        }
 
-        if (!nameEl || !testCasesList[currentIndex]) return;
-
-        const tc = testCasesList[currentIndex];
-        tc.name = nameEl.value;
-        tc.Name = nameEl.value;
-        tc.precondition = preconditionEl.value;
-        tc.Precondition = preconditionEl.value;
-        tc.steps = stepsEl.value.split('\n').filter(x => x.trim());
-        tc.Step = tc.steps;
-        tc.expected_result = expectedEl.value;
-        tc["Expected result"] = expectedEl.value;
-
-        if (fieldsContainer) {
-            const inputs = fieldsContainer.querySelectorAll('input');
-            inputs.forEach((inp, idx) => {
-                const label = fieldsContainer.querySelector(`label[for="field-${idx}"]`);
-                if (label) {
-                    const fieldName = label.textContent.replace(':', '').trim();
-                    globalFieldValues[fieldName] = inp.value;
-                }
+        setStatus('Анализирую запрос и собираю группы кейсов...');
+        try {
+            const response = await fetch(`${API_BASE_URL}/get_test_case`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, doc_url: docUrl })
             });
+            const data = await response.json();
+            const parsed = parseResult(data?.result);
+            groupedCases = normalizeGroupedResponse(parsed);
+            selectedKey = firstExistingKey();
+
+            const counts = countCases(groupedCases);
+            setStatus(`Готово: ${counts.total} предложений в 3 группах.`);
+            renderResults();
+            renderEditor();
+        } catch (error) {
+            console.error(error);
+            setStatus(`Ошибка: ${error}`);
         }
     }
 
-    function renderCurrentTestCase() {
-        const viewer = document.getElementById('test-case-viewer');
-        viewer.innerHTML = '';
-        if (!testCasesList.length) return;
-    
-        const tc = normalizeTestCase(testCasesList[currentIndex]);
-        editableFields = {};
-    
-        const html = document.createElement('div');
-        html.className = 'ctc-card ctc-view';
-    
-        html.innerHTML = `
-            <h4>🧪 Test Case ${currentIndex + 1} of ${testCasesList.length}</h4>
-    
-            <div class="ctc-row">
-                <label for="tc-name">Name</label>
-                <textarea id="tc-name" class="ctc-textarea" style="min-height:60px;">${tc.name}</textarea>
+    function renderResults() {
+        const results = document.getElementById('ctc-results');
+        const counts = countCases(groupedCases);
+
+        results.innerHTML = `
+            <div class="ctc-summary-grid">
+                ${renderSummaryCard('most_important', counts.most_important)}
+                ${renderSummaryCard('less_important', counts.less_important)}
+                ${renderSummaryCard('possibly_affected_existing', counts.possibly_affected_existing)}
             </div>
-    
-            <div class="ctc-row">
-                <label for="tc-precondition">Precondition</label>
-                <textarea id="tc-precondition" class="ctc-textarea" style="min-height:80px;">${tc.precondition}</textarea>
-            </div>
-    
-            <div class="ctc-row">
-                <label for="tc-steps">Steps</label>
-                <textarea id="tc-steps" class="ctc-textarea" style="min-height:120px;">${tc.steps.join('\n')}</textarea>
-            </div>
-    
-            <div class="ctc-row">
-                <label for="tc-expected">Expected Result</label>
-                <textarea id="tc-expected" class="ctc-textarea" style="min-height:80px;">${tc.expected_result}</textarea>
-            </div>
-    
-            <div class="ctc-row">
-                <label>Fields</label>
-                <div id="fields-container"></div>
-            </div>
-    
-            <div id="test-case-navigation" class="ctc-nav">
-                <button id="prev-btn" class="ctc-btn secondary" ${currentIndex === 0 ? 'disabled' : ''}>Previous</button>
-                <button id="next-btn" class="ctc-btn secondary" ${currentIndex === testCasesList.length - 1 ? 'disabled' : ''}>Next</button>
-                <button id="remove-btn" class="ctc-btn danger">Remove Current</button>
-                <button id="create-btn" class="ctc-btn primary">Create in Allure</button>
+            ${renderGroup('most_important')}
+            ${renderGroup('less_important')}
+            ${renderGroup('possibly_affected_existing')}
+        `;
+
+        results.querySelectorAll('[data-case-key]').forEach((node) => {
+            node.addEventListener('click', () => {
+                saveCurrentEditor();
+                selectedKey = node.getAttribute('data-case-key');
+                renderResults();
+                renderEditor();
+            });
+        });
+    }
+
+    function renderSummaryCard(groupKey, count) {
+        const config = GROUP_CONFIG[groupKey];
+        return `
+            <div class="ctc-summary-card ${config.accent}">
+                <div class="ctc-summary-label">${escapeHtml(config.title)}</div>
+                <div class="ctc-summary-count">${count}</div>
             </div>
         `;
-        viewer.appendChild(html);
-    
-        const fieldsContainer = html.querySelector('#fields-container');
-        tc.fields.forEach((f, i) => {
-            const displayValue = (f.fieldName in globalFieldValues)
-                ? globalFieldValues[f.fieldName]
-                : f.fieldValue;
-            const row = document.createElement('div');
-            row.className = 'ctc-field-row';
-            row.innerHTML = `
-                <label for="field-${i}">${f.fieldName}:</label>
-                <input id="field-${i}" class="ctc-input" type="text" value="${displayValue}" />
+    }
+
+    function renderGroup(groupKey) {
+        const config = GROUP_CONFIG[groupKey];
+        const items = groupedCases[groupKey] || [];
+        return `
+            <div class="ctc-group">
+                <div class="ctc-group-title">
+                    <h4>${escapeHtml(config.title)}</h4>
+                    <span class="ctc-summary-label">${items.length}</span>
+                </div>
+                <p class="ctc-group-subtitle">${escapeHtml(config.subtitle)}</p>
+                <div class="ctc-cards">
+                    ${items.length ? items.map((item, index) => renderCaseCard(groupKey, item, index)).join('') : '<div class="ctc-empty">Пока ничего не предложено в этой группе.</div>'}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderCaseCard(groupKey, item, index) {
+        const key = makeCaseKey(groupKey, index);
+        const selectedClass = key === selectedKey ? 'ctc-item-selected' : '';
+        const operation = item.operation === 'update' ? 'update' : 'create';
+        const badgeLabel = operation === 'update' ? `update #${item.existing_id ?? '?'}` : 'create';
+        const badgeClass = operation === 'update' ? 'ctc-pill-update' : 'ctc-pill-create';
+        return `
+            <article class="ctc-item ${selectedClass}" data-case-key="${escapeAttribute(key)}">
+                <div class="ctc-item-top">
+                    <div class="ctc-item-name">${escapeHtml(item.name || 'Без названия')}</div>
+                    <span class="ctc-pill ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+                </div>
+                <div class="ctc-item-summary">${escapeHtml(item.change_summary || 'Без пояснения')}</div>
+                <div class="ctc-item-meta">${escapeHtml(GROUP_CONFIG[groupKey].title)}</div>
+            </article>
+        `;
+    }
+
+    function renderEditor() {
+        const editor = document.getElementById('ctc-editor');
+        const selected = getSelectedCase();
+
+        if (!selected) {
+            editor.innerHTML = `
+                <div class="ctc-editor-header">
+                    <div>
+                        <h4 class="ctc-editor-title">Детали кейса</h4>
+                        <p class="ctc-editor-hint">Выбери карточку из любой группы, чтобы посмотреть и при необходимости отредактировать её перед созданием или обновлением в Allure.</p>
+                    </div>
+                </div>
             `;
-            fieldsContainer.appendChild(row);
-        });
-    
-        document.getElementById('prev-btn').addEventListener('click', () => {
-            saveCurrentTestCase();
-            if (currentIndex > 0) currentIndex--;
-            renderCurrentTestCase();
-        });
-    
-        document.getElementById('next-btn').addEventListener('click', () => {
-            saveCurrentTestCase();
-            if (currentIndex < testCasesList.length - 1) currentIndex++;
-            renderCurrentTestCase();
-        });
-    
-        document.getElementById('remove-btn').addEventListener('click', () => {
-            testCasesList.splice(currentIndex, 1);
-            if (currentIndex >= testCasesList.length) currentIndex = Math.max(0, testCasesList.length - 1);
-            renderCurrentTestCase();
-        });
-    
-        document.getElementById('create-btn').addEventListener('click', async () => {
-            const statusDiv = document.getElementById('create-test-status');
-    
-            const newFields = [];
-            const inputs = html.querySelectorAll('#fields-container input');
-            inputs.forEach((inp, idx) => {
-                const label = html.querySelector(`label[for="field-${idx}"]`).textContent.replace(':','').trim();
-                newFields.push({ fieldName: label, fieldValue: inp.value });
-            });
-    
-            const args = {
-                name: document.getElementById('tc-name').value,
-                precondition: document.getElementById('tc-precondition').value,
-                steps: document.getElementById('tc-steps').value.split('\n').filter(x => x.trim()),
-                expected_result: document.getElementById('tc-expected').value,
-                fields: newFields
-            };
-    
-            statusDiv.textContent = 'Creating test in Allure...';
-            try {
-                const response = await fetch(`${API_BASE_URL}/create_test_case`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(args)
-                });
-                const data = await response.json();
-                statusDiv.textContent = `✅ Created: ${JSON.stringify(data.result)}`;
-            } catch (err) {
-                statusDiv.textContent = `Error: ${err}`;
+            return;
+        }
+
+        const { groupKey, item } = selected;
+        const submitLabel = item.operation === 'update' ? 'Обновить в Allure' : 'Создать в Allure';
+
+        editor.innerHTML = `
+            <div class="ctc-editor-header">
+                <div>
+                    <h4 class="ctc-editor-title">${escapeHtml(item.name || 'Без названия')}</h4>
+                    <p class="ctc-editor-hint">${escapeHtml(GROUP_CONFIG[groupKey].title)}. ${escapeHtml(item.change_summary || '')}</p>
+                </div>
+                <button id="ctc-apply-btn" class="ctc-btn ctc-btn-primary" type="button">${escapeHtml(submitLabel)}</button>
+            </div>
+            <div class="ctc-form-grid">
+                <div>
+                    <label class="ctc-label" for="ctc-name">Name</label>
+                    <textarea id="ctc-name" class="ctc-input">${escapeHtml(item.name)}</textarea>
+                </div>
+                <div>
+                    <label class="ctc-label" for="ctc-summary">Change summary</label>
+                    <textarea id="ctc-summary" class="ctc-input">${escapeHtml(item.change_summary)}</textarea>
+                </div>
+                <div>
+                    <label class="ctc-label" for="ctc-precondition">Precondition</label>
+                    <textarea id="ctc-precondition" class="ctc-input">${escapeHtml(item.precondition)}</textarea>
+                </div>
+                <div>
+                    <label class="ctc-label" for="ctc-steps">Steps</label>
+                    <textarea id="ctc-steps" class="ctc-input">${escapeHtml((item.steps || []).join('\n'))}</textarea>
+                </div>
+                <div>
+                    <label class="ctc-label" for="ctc-expected">Expected result</label>
+                    <textarea id="ctc-expected" class="ctc-input">${escapeHtml(item.expected_result)}</textarea>
+                </div>
+                <div>
+                    <div class="ctc-label">Fields</div>
+                    <div id="ctc-fields" class="ctc-fields">
+                        ${(item.fields || []).map((field, index) => `
+                            <div class="ctc-field-row">
+                                <div class="ctc-field-name">${escapeHtml(field.fieldName || `Field ${index + 1}`)}</div>
+                                <input class="ctc-input" data-field-index="${index}" value="${escapeAttribute(field.fieldValue || '')}" />
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('ctc-apply-btn').addEventListener('click', applyCurrentCase);
+    }
+
+    function saveCurrentEditor() {
+        const selected = getSelectedCase();
+        if (!selected) return;
+
+        const { item } = selected;
+        const nameEl = document.getElementById('ctc-name');
+        const summaryEl = document.getElementById('ctc-summary');
+        const preconditionEl = document.getElementById('ctc-precondition');
+        const stepsEl = document.getElementById('ctc-steps');
+        const expectedEl = document.getElementById('ctc-expected');
+        const fieldInputs = document.querySelectorAll('#ctc-fields [data-field-index]');
+
+        if (!nameEl || !summaryEl || !preconditionEl || !stepsEl || !expectedEl) return;
+
+        item.name = nameEl.value.trim();
+        item.change_summary = summaryEl.value.trim();
+        item.precondition = preconditionEl.value.trim();
+        item.steps = stepsEl.value.split('\n').map((line) => line.trim()).filter(Boolean);
+        item.expected_result = expectedEl.value.trim();
+
+        fieldInputs.forEach((input) => {
+            const idx = Number(input.getAttribute('data-field-index'));
+            if (!Number.isNaN(idx) && item.fields[idx]) {
+                const fieldName = item.fields[idx].fieldName;
+                const fieldValue = input.value;
+                item.fields[idx].fieldValue = fieldValue;
+                propagateFieldValue(fieldName, fieldValue);
             }
         });
     }
-    
-    function normalizeTestCase(raw) {
-        if (!raw) return { name: '', precondition: '', steps: [], expected_result: '', fields: [] };
-        return {
-            name: raw.name || raw.Name || '',
-            precondition: raw.precondition || raw.Precondition || '',
-            steps: Array.isArray(raw.Step) ? raw.Step : raw.steps || [],
-            expected_result: raw.expected_result || raw["Expected result"] || '',
-            fields: Array.isArray(raw.Fields)
-                ? raw.Fields
-                : (raw.fields || [])
+
+    async function applyCurrentCase() {
+        const selected = getSelectedCase();
+        if (!selected) return;
+        saveCurrentEditor();
+
+        const { item } = selected;
+        const endpoint = item.operation === 'update' ? '/update_test_case' : '/create_test_case';
+        const payload = {
+            name: item.name,
+            precondition: item.precondition,
+            steps: item.steps,
+            expected_result: item.expected_result,
+            fields: item.fields,
         };
-    }    
+
+        if (item.operation === 'update') {
+            if (!item.existing_id) {
+                setStatus('Для update нужен Existing ID.');
+                return;
+            }
+            payload.test_case_id = Number(item.existing_id);
+        }
+
+        setStatus(item.operation === 'update' ? 'Обновляю кейс в Allure...' : 'Создаю кейс в Allure...');
+        try {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            setStatus(String(data?.result || 'Операция завершена.'));
+            renderResults();
+            renderEditor();
+        } catch (error) {
+            console.error(error);
+            setStatus(`Ошибка применения: ${error}`);
+        }
+    }
+
+    function parseResult(result) {
+        if (typeof result !== 'string') return result;
+        const trimmed = result.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            return JSON.parse(trimmed);
+        }
+        const match = trimmed.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+        if (!match) {
+            throw new Error('Не удалось распарсить JSON из ответа модели');
+        }
+        return JSON.parse(match[1]);
+    }
+
+    function normalizeGroupedResponse(raw) {
+        if (Array.isArray(raw)) {
+            const normalized = {
+                most_important: raw.map((item) => normalizeCase(item)),
+                less_important: [],
+                possibly_affected_existing: [],
+            };
+            applySharedFields(normalized);
+            return normalized;
+        }
+
+        const source = raw && typeof raw === 'object' ? raw : {};
+        const normalized = {
+            most_important: normalizeCaseArray(
+                source.most_important || source.mostImportant || source['Самые важные кейсы']
+            ),
+            less_important: normalizeCaseArray(
+                source.less_important || source.lessImportant || source['Менее важные кейсы']
+            ),
+            possibly_affected_existing: normalizeCaseArray(
+                source.possibly_affected_existing || source.possiblyAffectedExisting || source['Возможно затронутые']
+            ).map((item) => {
+                if (!item.existing_id) {
+                    item.operation = 'update';
+                }
+                return item;
+            }),
+        };
+        applySharedFields(normalized);
+        return normalized;
+    }
+
+    function normalizeCaseArray(items) {
+        return Array.isArray(items) ? items.map((item) => normalizeCase(item)) : [];
+    }
+
+    function normalizeCase(raw) {
+        const source = raw || {};
+        return {
+            operation: String(source.operation || source.Operation || 'create').toLowerCase(),
+            existing_id: source.existing_id ?? source['Existing ID'] ?? null,
+            change_summary: source.change_summary || source['Change summary'] || '',
+            name: source.name || source.Name || '',
+            precondition: source.precondition || source.Precondition || '',
+            steps: Array.isArray(source.Step) ? source.Step : Array.isArray(source.steps) ? source.steps : [],
+            expected_result: source.expected_result || source['Expected result'] || '',
+            fields: Array.isArray(source.Fields) ? source.Fields : Array.isArray(source.fields) ? source.fields : [],
+        };
+    }
+
+    function countCases(groups) {
+        const most_important = (groups.most_important || []).length;
+        const less_important = (groups.less_important || []).length;
+        const possibly_affected_existing = (groups.possibly_affected_existing || []).length;
+        return {
+            most_important,
+            less_important,
+            possibly_affected_existing,
+            total: most_important + less_important + possibly_affected_existing,
+        };
+    }
+
+    function firstExistingKey() {
+        for (const groupKey of Object.keys(GROUP_CONFIG)) {
+            if ((groupedCases[groupKey] || []).length) {
+                return makeCaseKey(groupKey, 0);
+            }
+        }
+        return null;
+    }
+
+    function getSelectedCase() {
+        if (!selectedKey) return null;
+        const [groupKey, rawIndex] = selectedKey.split(':');
+        const index = Number(rawIndex);
+        if (!GROUP_CONFIG[groupKey] || Number.isNaN(index)) return null;
+        const item = groupedCases[groupKey]?.[index];
+        if (!item) return null;
+        return { groupKey, index, item };
+    }
+
+    function makeCaseKey(groupKey, index) {
+        return `${groupKey}:${index}`;
+    }
+
+    function emptyGroupedCases() {
+        return {
+            most_important: [],
+            less_important: [],
+            possibly_affected_existing: [],
+        };
+    }
+
+    function applySharedFields(groups) {
+        const shared = new Map();
+        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
+            (groups[groupKey] || []).forEach((item) => {
+                (item.fields || []).forEach((field) => {
+                    if (!field?.fieldName || shared.has(field.fieldName)) return;
+                    shared.set(field.fieldName, field.fieldValue || '');
+                });
+            });
+        });
+
+        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
+            (groups[groupKey] || []).forEach((item) => {
+                const own = new Map((item.fields || []).filter((field) => field?.fieldName).map((field) => [field.fieldName, field.fieldValue || '']));
+                item.fields = Array.from(shared.entries()).map(([fieldName, fieldValue]) => ({
+                    fieldName,
+                    fieldValue: own.has(fieldName) ? own.get(fieldName) : fieldValue,
+                }));
+            });
+        });
+    }
+
+    function propagateFieldValue(fieldName, fieldValue) {
+        if (!fieldName) return;
+        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
+            (groupedCases[groupKey] || []).forEach((caseItem) => {
+                const target = (caseItem.fields || []).find((field) => field.fieldName === fieldName);
+                if (target) target.fieldValue = fieldValue;
+            });
+        });
+    }
+
+    function setStatus(text) {
+        const status = document.getElementById('ctc-status');
+        if (status) status.textContent = text || '';
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;');
+    }
+
+    function escapeAttribute(value) {
+        return escapeHtml(value)
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    waitForMount();
 })();
