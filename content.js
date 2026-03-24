@@ -583,7 +583,7 @@
                     <div class="ctc-item-name">${escapeHtml(item.name || 'Без названия')}</div>
                     <span class="ctc-pill ${badgeClass}">${escapeHtml(badgeLabel)}</span>
                 </div>
-                <div class="ctc-item-summary">${escapeHtml(item.change_summary || 'Без пояснения')}</div>
+                <div class="ctc-item-summary">${escapeHtml(item.description || 'Без описания')}</div>
                 <div class="ctc-item-meta">${escapeHtml(GROUP_CONFIG[groupKey].title)}</div>
             </article>
         `;
@@ -612,7 +612,7 @@
             <div class="ctc-editor-header">
                 <div>
                     <h4 class="ctc-editor-title">${escapeHtml(item.name || 'Без названия')}</h4>
-                    <p class="ctc-editor-hint">${escapeHtml(GROUP_CONFIG[groupKey].title)}. ${escapeHtml(item.change_summary || '')}</p>
+                    <p class="ctc-editor-hint">${escapeHtml(GROUP_CONFIG[groupKey].title)}</p>
                 </div>
                 <button id="ctc-apply-btn" class="ctc-btn ctc-btn-primary" type="button">${escapeHtml(submitLabel)}</button>
             </div>
@@ -622,8 +622,8 @@
                     <textarea id="ctc-name" class="ctc-input">${escapeHtml(item.name)}</textarea>
                 </div>
                 <div>
-                    <label class="ctc-label" for="ctc-summary">Change summary</label>
-                    <textarea id="ctc-summary" class="ctc-input">${escapeHtml(item.change_summary)}</textarea>
+                    <label class="ctc-label" for="ctc-description">Description</label>
+                    <textarea id="ctc-description" class="ctc-input">${escapeHtml(item.description || '')}</textarea>
                 </div>
                 <div>
                     <label class="ctc-label" for="ctc-precondition">Precondition</label>
@@ -652,6 +652,7 @@
         `;
 
         document.getElementById('ctc-apply-btn').addEventListener('click', applyCurrentCase);
+        bindEditorAutosave();
     }
 
     function saveCurrentEditor() {
@@ -660,16 +661,16 @@
 
         const { item } = selected;
         const nameEl = document.getElementById('ctc-name');
-        const summaryEl = document.getElementById('ctc-summary');
+        const descriptionEl = document.getElementById('ctc-description');
         const preconditionEl = document.getElementById('ctc-precondition');
         const stepsEl = document.getElementById('ctc-steps');
         const expectedEl = document.getElementById('ctc-expected');
         const fieldInputs = document.querySelectorAll('#ctc-fields [data-field-index]');
 
-        if (!nameEl || !summaryEl || !preconditionEl || !stepsEl || !expectedEl) return;
+        if (!nameEl || !descriptionEl || !preconditionEl || !stepsEl || !expectedEl) return;
 
         item.name = nameEl.value.trim();
-        item.change_summary = summaryEl.value.trim();
+        item.description = descriptionEl.value.trim();
         item.precondition = preconditionEl.value.trim();
         item.steps = stepsEl.value.split('\n').map((line) => line.trim()).filter(Boolean);
         item.expected_result = expectedEl.value.trim();
@@ -677,11 +678,19 @@
         fieldInputs.forEach((input) => {
             const idx = Number(input.getAttribute('data-field-index'));
             if (!Number.isNaN(idx) && item.fields[idx]) {
-                const fieldName = item.fields[idx].fieldName;
-                const fieldValue = input.value;
-                item.fields[idx].fieldValue = fieldValue;
-                propagateFieldValue(fieldName, fieldValue);
+                item.fields[idx].fieldValue = input.value;
             }
+        });
+    }
+
+    function bindEditorAutosave() {
+        const editor = document.getElementById('ctc-editor');
+        if (!editor) return;
+        editor.querySelectorAll('textarea, input').forEach((element) => {
+            element.addEventListener('input', () => {
+                saveCurrentEditor();
+                renderResults();
+            });
         });
     }
 
@@ -694,6 +703,7 @@
         const endpoint = item.operation === 'update' ? '/update_test_case' : '/create_test_case';
         const payload = {
             name: item.name,
+            description: item.description || '',
             precondition: item.precondition,
             steps: item.steps,
             expected_result: item.expected_result,
@@ -745,7 +755,6 @@
                 less_important: [],
                 possibly_affected_existing: [],
             };
-            applySharedFields(normalized);
             return normalized;
         }
 
@@ -766,7 +775,6 @@
                 return item;
             }),
         };
-        applySharedFields(normalized);
         return normalized;
     }
 
@@ -779,12 +787,16 @@
         return {
             operation: String(source.operation || source.Operation || 'create').toLowerCase(),
             existing_id: source.existing_id ?? source['Existing ID'] ?? null,
-            change_summary: source.change_summary || source['Change summary'] || '',
             name: source.name || source.Name || '',
+            description: source.description || source.Description || '',
             precondition: source.precondition || source.Precondition || '',
             steps: Array.isArray(source.Step) ? source.Step : Array.isArray(source.steps) ? source.steps : [],
             expected_result: source.expected_result || source['Expected result'] || '',
-            fields: Array.isArray(source.Fields) ? source.Fields : Array.isArray(source.fields) ? source.fields : [],
+            fields: Array.isArray(source.Fields)
+                ? source.Fields.map((field) => ({ ...field }))
+                : Array.isArray(source.fields)
+                    ? source.fields.map((field) => ({ ...field }))
+                    : [],
         };
     }
 
@@ -829,38 +841,6 @@
             less_important: [],
             possibly_affected_existing: [],
         };
-    }
-
-    function applySharedFields(groups) {
-        const shared = new Map();
-        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
-            (groups[groupKey] || []).forEach((item) => {
-                (item.fields || []).forEach((field) => {
-                    if (!field?.fieldName || shared.has(field.fieldName)) return;
-                    shared.set(field.fieldName, field.fieldValue || '');
-                });
-            });
-        });
-
-        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
-            (groups[groupKey] || []).forEach((item) => {
-                const own = new Map((item.fields || []).filter((field) => field?.fieldName).map((field) => [field.fieldName, field.fieldValue || '']));
-                item.fields = Array.from(shared.entries()).map(([fieldName, fieldValue]) => ({
-                    fieldName,
-                    fieldValue: own.has(fieldName) ? own.get(fieldName) : fieldValue,
-                }));
-            });
-        });
-    }
-
-    function propagateFieldValue(fieldName, fieldValue) {
-        if (!fieldName) return;
-        Object.keys(GROUP_CONFIG).forEach((groupKey) => {
-            (groupedCases[groupKey] || []).forEach((caseItem) => {
-                const target = (caseItem.fields || []).find((field) => field.fieldName === fieldName);
-                if (target) target.fieldValue = fieldValue;
-            });
-        });
     }
 
     function setStatus(text) {
