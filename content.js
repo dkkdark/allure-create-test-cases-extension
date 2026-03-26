@@ -454,6 +454,10 @@
                             <label class="ctc-label" for="ctc-doc-url">Ссылка на доку</label>
                             <input id="ctc-doc-url" class="ctc-input" type="url" placeholder="https://your-company.atlassian.net/wiki/..." />
                         </div>
+                        <div class="ctc-input-wrap">
+                            <label class="ctc-label" for="ctc-task">Задача</label>
+                            <textarea id="ctc-task" class="ctc-query" placeholder="Вставь Jira key, ссылку на задачу или текст задачи"></textarea>
+                        </div>
                     </div>
                     <div class="ctc-actions">
                         <button id="ctc-generate-btn" class="ctc-btn ctc-btn-primary" type="button">Собрать предложения</button>
@@ -478,6 +482,7 @@
             selectedKey = null;
             document.getElementById('ctc-query').value = '';
             document.getElementById('ctc-doc-url').value = '';
+            document.getElementById('ctc-task').value = '';
             setStatus('');
             renderResults();
             renderEditor();
@@ -492,8 +497,10 @@
     async function handleGenerate() {
         const query = document.getElementById('ctc-query').value.trim();
         const docUrl = document.getElementById('ctc-doc-url').value.trim();
-        if (!query && !docUrl) {
-            setStatus('Нужно добавить описание, ссылку на доку или оба источника сразу.');
+        const task = document.getElementById('ctc-task').value.trim();
+        const { jiraUrl, jiraText } = splitTaskValue(task);
+        if (!query && !docUrl && !task) {
+            setStatus('Нужно добавить хотя бы один источник: описание, доку или задачу.');
             return;
         }
 
@@ -502,7 +509,12 @@
             const response = await fetch(`${API_BASE_URL}/get_test_case`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query, doc_url: docUrl })
+                body: JSON.stringify({
+                    query,
+                    jira_url: jiraUrl,
+                    jira_text: jiraText,
+                    doc_url: docUrl,
+                })
             });
             const data = await response.json();
             const parsed = parseResult(data?.result);
@@ -846,6 +858,18 @@
     function setStatus(text) {
         const status = document.getElementById('ctc-status');
         if (status) status.textContent = text || '';
+    }
+
+    function splitTaskValue(taskValue) {
+        const value = String(taskValue || '').trim();
+        if (!value) {
+            return { jiraUrl: '', jiraText: '' };
+        }
+        const jiraKeyPattern = /\b[A-Z][A-Z0-9]+-\d+\b/;
+        if (value.startsWith('http://') || value.startsWith('https://') || jiraKeyPattern.test(value)) {
+            return { jiraUrl: value, jiraText: '' };
+        }
+        return { jiraUrl: '', jiraText: value };
     }
 
     function escapeHtml(value) {
