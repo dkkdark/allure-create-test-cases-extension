@@ -25,6 +25,7 @@
         possibly_affected_existing: [],
     };
     let selectedKey = null;
+    const QUERY_ONLY_MODE_KEY = 'ctc-query-only-mode';
 
     function ensureStylesInjected() {
         if (document.getElementById('create-test-styles')) return;
@@ -174,6 +175,32 @@
                 align-items: center;
                 gap: 10px;
                 flex-wrap: wrap;
+            }
+            #create-test-container .ctc-mode-toggle {
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                margin-left: auto;
+                padding: 8px 12px;
+                border-radius: 999px;
+                border: 1px solid var(--ctc-border);
+                background: var(--ctc-secondary);
+                color: var(--ctc-text);
+                font-size: 12px;
+                font-weight: 700;
+            }
+            #create-test-container .ctc-mode-toggle input {
+                accent-color: var(--ctc-primary);
+                width: 16px;
+                height: 16px;
+                margin: 0;
+            }
+            #create-test-container .ctc-mode-note {
+                width: 100%;
+                margin: 2px 0 0;
+                color: var(--ctc-text-muted);
+                font-size: 12px;
+                line-height: 1.45;
             }
             #create-test-container .ctc-btn {
                 border: 1px solid transparent;
@@ -462,6 +489,11 @@
                     <div class="ctc-actions">
                         <button id="ctc-generate-btn" class="ctc-btn ctc-btn-primary" type="button">Собрать предложения</button>
                         <button id="ctc-clear-btn" class="ctc-btn ctc-btn-secondary" type="button">Очистить</button>
+                        <label class="ctc-mode-toggle" for="ctc-query-only-mode">
+                            <input id="ctc-query-only-mode" type="checkbox" ${isQueryOnlyModeEnabled() ? 'checked' : ''} />
+                            <span>Только из query</span>
+                        </label>
+                        <div class="ctc-mode-note">Когда режим включён, текст из поля «Описание задачи» превращается в тесты буквально, без использования Jira, Confluence и поиска похожих кейсов.</div>
                         <div id="ctc-status" class="ctc-status"></div>
                     </div>
                 </section>
@@ -475,6 +507,14 @@
         document.getElementById('ctc-theme-btn').addEventListener('click', () => {
             container.classList.toggle('ctc-dark');
             localStorage.setItem('ctc-theme-v2', container.classList.contains('ctc-dark') ? 'dark' : 'light');
+        });
+
+        document.getElementById('ctc-query-only-mode').addEventListener('change', (event) => {
+            localStorage.setItem(QUERY_ONLY_MODE_KEY, event.target.checked ? 'true' : 'false');
+            setStatus(event.target.checked
+                ? 'Включён режим буквального преобразования query в тесты.'
+                : ''
+            );
         });
 
         document.getElementById('ctc-clear-btn').addEventListener('click', () => {
@@ -498,23 +538,36 @@
         const query = document.getElementById('ctc-query').value.trim();
         const docUrl = document.getElementById('ctc-doc-url').value.trim();
         const task = document.getElementById('ctc-task').value.trim();
+        const queryOnlyMode = isQueryOnlyModeEnabled();
         const { jiraUrl, jiraText } = splitTaskValue(task);
+        if (queryOnlyMode && !query) {
+            setStatus('В режиме "Только из query" нужно заполнить поле "Описание задачи".');
+            return;
+        }
         if (!query && !docUrl && !task) {
             setStatus('Нужно добавить хотя бы один источник: описание, доку или задачу.');
             return;
         }
 
-        setStatus('Анализирую запрос и собираю группы кейсов...');
+        const endpoint = queryOnlyMode ? '/get_test_case_query_only' : '/get_test_case';
+        const payload = queryOnlyMode
+            ? { query }
+            : {
+                query,
+                jira_url: jiraUrl,
+                jira_text: jiraText,
+                doc_url: docUrl,
+            };
+
+        setStatus(queryOnlyMode
+            ? 'Преобразую query в тесты без дополнительных изменений...'
+            : 'Анализирую запрос и собираю группы кейсов...'
+        );
         try {
-            const response = await fetch(`${API_BASE_URL}/get_test_case`, {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    query,
-                    jira_url: jiraUrl,
-                    jira_text: jiraText,
-                    doc_url: docUrl,
-                })
+                body: JSON.stringify(payload)
             });
             const data = await response.json();
             const parsed = parseResult(data?.result);
@@ -870,6 +923,10 @@
             return { jiraUrl: value, jiraText: '' };
         }
         return { jiraUrl: '', jiraText: value };
+    }
+
+    function isQueryOnlyModeEnabled() {
+        return localStorage.getItem(QUERY_ONLY_MODE_KEY) === 'true';
     }
 
     function escapeHtml(value) {
